@@ -24,9 +24,32 @@ check_docker() {
         sudo systemctl start docker || sudo service docker start
         sudo systemctl enable docker || true
         sudo usermod -aG docker $USER
+        log_success "Docker 安装完成，正在配置国内镜像加速..."
+        configure_docker_mirror
         log_success "Docker 安装完成（可能需要重新登录）"
     else
         log_success "Docker 已安装: $(docker --version)"
+        configure_docker_mirror
+    fi
+}
+
+configure_docker_mirror() {
+    if [ ! -f /etc/docker/daemon.json ] || ! grep -q "registry-mirrors" /etc/docker/daemon.json 2>/dev/null; then
+        log_warn "配置国内 Docker 镜像加速器..."
+        sudo mkdir -p /etc/docker
+        sudo tee /etc/docker/daemon.json > /dev/null <<'EOF'
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker.xuanyuan.me"
+  ]
+}
+EOF
+        sudo systemctl daemon-reload
+        sudo systemctl restart docker
+        log_success "镜像加速配置完成"
+    else
+        log_success "Docker 镜像加速已配置"
     fi
 }
 
