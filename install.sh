@@ -14,16 +14,17 @@ log_error() { echo -e "${RED}[✗] $1${NC}"; exit 1; }
 check_docker() {
     if ! command -v docker &> /dev/null; then
         log_warn "Docker 未安装，正在自动安装..."
-        apt-get update -qq
-        apt-get install -y -qq ca-certificates curl gnupg lsb-release > /dev/null 2>&1
-        mkdir -p /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-        apt-get update -qq
-        apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin > /dev/null 2>&1
-        systemctl start docker || service docker start
-        systemctl enable docker || true
-        log_success "Docker 安装完成"
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq ca-certificates curl gnupg lsb-release > /dev/null 2>&1
+        sudo mkdir -p /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin > /dev/null 2>&1
+        sudo systemctl start docker || sudo service docker start
+        sudo systemctl enable docker || true
+        sudo usermod -aG docker $USER
+        log_success "Docker 安装完成（可能需要重新登录）"
     else
         log_success "Docker 已安装: $(docker --version)"
     fi
@@ -32,7 +33,7 @@ check_docker() {
 check_docker_compose() {
     if ! docker compose version &> /dev/null && ! command -v docker-compose &> /dev/null; then
         log_warn "Docker Compose 未安装，正在自动安装..."
-        apt-get install -y -qq docker-compose > /dev/null 2>&1 || true
+        sudo apt-get install -y -qq docker-compose > /dev/null 2>&1 || true
         log_success "Docker Compose 安装完成"
     else
         log_success "Docker Compose 已就绪"
