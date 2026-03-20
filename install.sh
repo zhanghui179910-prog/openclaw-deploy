@@ -84,6 +84,32 @@ create_workspace() {
     fi
 }
 
+check_and_clone_openclaw_source() {
+    local workspace_count=$(ls -A openclaw_workspace 2>/dev/null | wc -l)
+
+    if [ "$workspace_count" -eq 0 ]; then
+        log_warn "openclaw_workspace 目录为空，正在克隆 OpenClaw 源码..."
+        git clone https://github.com/openclaw/openclaw.git openclaw_workspace
+        log_info "OpenClaw 源码克隆完成"
+    else
+        log_info "openclaw_workspace 目录非空，跳过克隆"
+        return 0
+    fi
+
+    if [ -d "openclaw_workspace/openclaw" ]; then
+        log_warn "检测到嵌套目录，正在整理文件结构..."
+        mv openclaw_workspace/openclaw/* openclaw_workspace/
+        rmdir openclaw_workspace/openclaw
+        log_info "文件结构已整理完成"
+    fi
+
+    if [ -f "openclaw_workspace/requirements.txt" ]; then
+        log_info "requirements.txt 已就绪"
+    else
+        log_warn "未找到 requirements.txt，请检查源码"
+    fi
+}
+
 check_env_file() {
     if [ ! -f ".env" ] || [ ! -s ".env" ]; then
         if [ ! -f ".env.template" ]; then
@@ -109,6 +135,16 @@ check_env_file() {
 start_services() {
     log_info "正在构建并启动 OpenClaw 服务..."
     docker compose up -d --build
+
+    log_info "等待容器启动完成..."
+    sleep 3
+
+    if [ -f "openclaw_workspace/requirements.txt" ]; then
+        log_info "正在安装 Python 依赖..."
+        docker exec openclaw bash -c "cd /workspace && pip install -r requirements.txt"
+        log_info "Python 依赖安装完成"
+    fi
+
     log_info "=========================================="
     log_info "  OpenClaw 启动成功！"
     log_info "  查看日志: docker compose logs -f"
@@ -124,6 +160,7 @@ main() {
     check_docker
     check_docker_compose
     create_workspace
+    check_and_clone_openclaw_source
     check_env_file
     start_services
 }
