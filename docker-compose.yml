@@ -12,11 +12,13 @@ services:
       - ./.env:/app/.env:ro
     environment:
       - WORKSPACE_PATH=/workspace
-    networks:
-      - openclaw-network
+    # --- 下面这三行就是保活的关键，一定要有 ---
     tty: true
     stdin_open: true
     command: tail -f /dev/null
+    # ------------------------------------------
+    networks:
+      - openclaw-network
 
 networks:
   openclaw-network:
