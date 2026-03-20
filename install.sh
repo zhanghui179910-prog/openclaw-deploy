@@ -55,10 +55,6 @@ check_docker() {
         sudo usermod -aG docker $USER
         configure_docker_mirror
         log_info "Docker 安装完成"
-        log_warn "=========================================="
-        log_warn "  安装完成，建议重新登录后执行 ./install.sh"
-        log_warn "  或直接继续执行（如果 Docker 已可用）"
-        log_warn "=========================================="
     else
         log_info "Docker 已安装: $(docker --version)"
         configure_docker_mirror
@@ -68,11 +64,28 @@ check_docker() {
 check_docker_compose() {
     if ! docker compose version &> /dev/null && ! command -v docker-compose &> /dev/null; then
         log_warn "Docker Compose 未安装，正在自动安装..."
-        sudo apt-get install -y -qq docker-compose > /dev/null 2>&1 || log_warn "Docker Compose 安装失败，请手动安装"
+        sudo apt-get install -y -qq docker-compose > /dev/null 2>&1 || log_warn "Docker Compose 安装失败"
         log_info "Docker Compose 安装完成"
     else
-        log_info "Docker Compose 已就绪: $(docker compose version 2>/dev/null || docker-compose version 2>/dev/null)"
+        log_info "Docker Compose 已就绪"
     fi
+}
+
+check_node() {
+    if ! command -v node &> /dev/null; then
+        log_warn "Node.js 未安装，正在安装 Node.js 22..."
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+        sudo apt-get install -y -qq nodejs > /dev/null 2>&1 || log_error "Node.js 安装失败"
+        log_info "Node.js 安装完成: $(node --version)"
+    else
+        log_info "Node.js 已安装: $(node --version)"
+    fi
+
+    if ! command -v npm &> /dev/null; then
+        log_warn "npm 未找到，尝试安装..."
+        sudo apt-get install -y -qq npm > /dev/null 2>&1
+    fi
+    log_info "npm 已就绪: $(npm --version)"
 }
 
 create_workspace() {
@@ -103,10 +116,13 @@ check_and_clone_openclaw_source() {
         log_info "文件结构已整理完成"
     fi
 
-    if [ -f "openclaw_workspace/requirements.txt" ]; then
-        log_info "requirements.txt 已就绪"
+    if [ -f "openclaw_workspace/package.json" ]; then
+        log_info "package.json 已就绪，正在安装 npm 依赖..."
+        cd openclaw_workspace
+        npm install
+        log_info "npm 依赖安装完成"
     else
-        log_warn "未找到 requirements.txt，请检查源码"
+        log_warn "未找到 package.json，请检查源码"
     fi
 }
 
@@ -132,23 +148,39 @@ check_env_file() {
     fi
 }
 
-start_services() {
-    log_info "正在构建并启动 OpenClaw 服务..."
-    docker compose up -d --build
-
-    log_info "等待容器启动完成..."
-    sleep 3
-
-    if [ -f "openclaw_workspace/requirements.txt" ]; then
-        log_info "正在安装 Python 依赖..."
-        docker exec openclaw bash -c "cd /workspace && pip install -r requirements.txt"
-        log_info "Python 依赖安装完成"
+install_openclaw_cli() {
+    if ! command -v openclaw &> /dev/null; then
+        log_warn "正在全局安装 OpenClaw CLI..."
+        sudo npm install -g openclaw@latest
+        log_info "OpenClaw CLI 安装完成"
+    else
+        log_info "OpenClaw CLI 已安装: $(openclaw --version 2>/dev/null || echo 'version unknown')"
     fi
+}
 
-    log_info "=========================================="
-    log_info "  OpenClaw 启动成功！"
-    log_info "  查看日志: docker compose logs -f"
-    log_info "  进入容器: docker exec -it openclaw bash"
+install_docker_container() {
+    log_info "正在构建 OpenClaw Docker 容器..."
+    docker compose up -d --build
+    log_info "Docker 容器已启动"
+}
+
+start_services() {
+    install_openclaw_cli
+
+    echo ""
+    log_warn "=========================================="
+    log_warn "  部署完成！"
+    log_warn "=========================================="
+    echo ""
+    log_info "启动 OpenClaw 网关（前台运行）:"
+    log_info "  cd ~/openclaw-deploy/openclaw_workspace"
+    log_info "  openclaw gateway --port 8080 --verbose"
+    echo ""
+    log_info "或者使用 Docker 方式运行:"
+    log_info "  cd ~/openclaw-deploy"
+    log_info "  docker compose up -d"
+    echo ""
+    log_info "详细文档请查看 README.md"
     log_info "=========================================="
 }
 
@@ -159,6 +191,7 @@ main() {
     check_sudo
     check_docker
     check_docker_compose
+    check_node
     create_workspace
     check_and_clone_openclaw_source
     check_env_file
