@@ -20,6 +20,8 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple opena
 
 RUN useradd -m -s /bin/bash openclaw && chown -R openclaw:openclaw /workspace
 
+USER root
+RUN apt-get update && apt-get install -y procps && rm -rf /var/lib/apt/lists/*
 USER openclaw
 
-CMD ["tail", "-f", "/dev/null"]
+CMD ["sleep", "infinity"]
