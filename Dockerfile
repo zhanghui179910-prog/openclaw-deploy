@@ -22,4 +22,4 @@ RUN useradd -m -s /bin/bash openclaw && chown -R openclaw:openclaw /workspace
 
 USER openclaw
 
-CMD ["bash"]
+CMD ["tail", "-f", "/dev/null"]
