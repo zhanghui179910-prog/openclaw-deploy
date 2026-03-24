@@ -1,24 +1,108 @@
 # OpenClaw 离线部署包
 
-一键在 Ubuntu 虚拟机中部署 OpenClaw，支持 Docker 离线运行，内置 Python3 和 Go 语言环境。
+一键在 Ubuntu 虚拟机中部署 OpenClaw，直接在本地安装 Python3、Go 和 Node.js 环境。
 
 ## 目录结构
 
 ```
 openclaw-deploy/
 ├── install.sh           # 核心一键部署脚本
-├── docker-compose.yml   # Docker 服务编排配置
-├── Dockerfile           # 容器构建文件（内置 Python3 + Go）
 ├── .env.template        # 环境变量模板
 ├── .env                 # 实际配置文件（自动生成，不提交 Git）
-└── openclaw_workspace/ # 工作目录（数据持久化）
+└── openclaw_workspace/  # 工作目录（数据持久化）
 ```
+
+---
+
+# 虚拟机环境准备与注意事项
+
+## 硬件资源分配
+
+| 配置项 | 最低要求 | 推荐配置 |
+|--------|----------|----------|
+| CPU 核心数 | 2 核 | 4 核及以上 |
+| 内存 | 4 GB | 8 GB 及以上 |
+| 磁盘空间 | 20 GB | 40 GB 及以上 |
+| 交换分区 | 2 GB | 4 GB |
+
+> **注意**：AI 相关组件（如模型推理、Python/Go 编译）可能占用大量内存和 CPU，建议预留充足资源。
+
+## 网络模式配置
+
+推荐使用**桥接模式 (Bridged)**，让虚拟机获得独立 IP 地址，便于从宿主机直接访问服务。
+
+### 桥接模式配置步骤
+
+1. 在 VMware/VirtualBox 中选择虚拟机网络模式为 **桥接网卡 (Bridged)**
+2. 选择宿主机的物理网卡作为桥接接口
+3. 启动虚拟机后执行 `ip addr` 确认是否获得独立 IP
+4. 从宿主机终端可直接用该 IP SSH 连接虚拟机
+
+### NAT + 端口转发（备选）
+
+如果使用 NAT 模式，需要配置端口转发：
+
+**VirtualBox**：虚拟机设置 → 网络 → 高级 → 端口转发
+- 规则示例：主机端口 2222 → 虚拟机 IP:22
+
+**VMware**：虚拟机 → 设置 → 网络适配器 → 高级 → 端口转发
+
+## SSH 连接
+
+**强烈建议安装 SSH 服务**，方便在宿主机终端操作虚拟机：
+
+```bash
+sudo apt-get install openssh-server
+sudo systemctl enable ssh
+sudo systemctl start ssh
+```
+
+然后从宿主机连接：
+
+```bash
+ssh username@虚拟机IP地址
+```
+
+> 避免在虚拟机简陋的窗口中敲代码，SSH 连接体验更好，支持复制粘贴和标签页。
+
+## 虚拟化引擎设置
+
+确保在 VMware/VirtualBox 中开启了硬件虚拟化支持：
+
+- **Intel VT-x**：Intel 处理器需要开启
+- **AMD-V**：AMD 处理器需要开启
+
+### VMware 开启方法
+
+1. 虚拟机设置 → 处理器 →勾选 **"虚拟化 Intel VT-x/EPT 或 AMD-V/RVI"**
+
+### VirtualBox 开启方法
+
+1. 虚拟机设置 → 系统 → 加速 → 勾选 **"启用 VT-x/AMD-V"**
+
+## 基础环境
+
+首次部署前，务必执行基础更新：
+
+```bash
+sudo apt update && sudo apt upgrade -y
+```
+
+如果系统版本较旧（如 Ubuntu 18.04），建议升级后再继续：
+
+```bash
+sudo do-release-upgrade
+```
+
+---
+
+# Ubuntu 本地部署指南
 
 ## 部署步骤
 
 ### 第一步：获取安装包
 
-从 GitHub 克隆或下载本仓库到 Ubuntu 虚拟机：
+从宿主机将安装包传输到虚拟机，或直接在虚拟机中克隆：
 
 ```bash
 git clone https://github.com/zhanghui179910-prog/openclaw-deploy.git
@@ -31,7 +115,7 @@ cd openclaw-deploy
 chmod +x install.sh
 ```
 
-### 第三步：首次运行（自动安装 Docker + 初始化配置）
+### 第三步：首次运行（自动安装所有依赖）
 
 ```bash
 ./install.sh
@@ -39,9 +123,11 @@ chmod +x install.sh
 
 脚本会自动完成：
 
-- 检查并安装 Docker（若未安装）
-- 检查并安装 Docker Compose（若未安装）
-- 配置国内 Docker 镜像加速器
+- 配置阿里云镜像源（加速下载）
+- 安装系统基础依赖（curl, wget, git, build-essential, python3, pip）
+- 安装 Go 1.21 语言环境
+- 安装 Node.js 20 LTS 环境
+- 安装 Python 依赖（openai, python-dotenv, requests）
 - 创建 `openclaw_workspace` 工作目录
 - 从 `.env.template` 生成 `.env` 配置文件
 
@@ -65,91 +151,117 @@ SILICON_FLOW_API_KEY=your_silicon_flow_api_key_here
 
 保存退出：`Ctrl + X` → `Y` → `回车`
 
-### 第五步：再次运行启动服务
+### 第五步：再次运行完成部署
 
 ```bash
 ./install.sh
 ```
 
-看到 `✓ OpenClaw 启动成功！` 即表示部署完成。
+看到 `部署完成！` 即表示安装成功。
 
-### 第六步：配置 Docker 权限（非 root 用户）
+## 启动 OpenClaw
 
-如果以非 root 用户运行 Docker 命令（如 `docker compose ps`），需要将自己加入 docker 组：
+### 方式一：前台运行
 
 ```bash
-sudo usermod -aG docker $USER
+cd openclaw_workspace
+openclaw gateway --port 8080 --verbose
 ```
 
-**然后重新登录 Ubuntu**（退出当前终端并重新连接），使权限生效。
+### 方式二：后台运行（使用 nohup）
 
-### 常见权限问题
+```bash
+cd openclaw_workspace
+nohup openclaw gateway --port 8080 > openclaw.log 2>&1 &
+```
 
-| 错误信息 | 解决方法 |
-|---------|---------|
-| `permission denied while trying to connect to the Docker daemon` | 执行 `sudo usermod -aG docker $USER` 后重新登录 |
-| `Got permission denied while trying to connect to the Docker daemon socket` | 同上，或使用 `sudo docker ...` 前缀 |
+### 方式三：使用 systemd 服务（可选）
+
+创建服务文件：
+
+```bash
+sudo nano /etc/systemd/system/openclaw.service
+```
+
+内容如下：
+
+```ini
+[Unit]
+Description=OpenClaw Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/openclaw-deploy/openclaw_workspace
+ExecStart=/usr/local/bin/openclaw gateway --port 8080 --verbose
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启用并启动服务：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable openclaw
+sudo systemctl start openclaw
+```
+
+查看服务状态：
+
+```bash
+sudo systemctl status openclaw
+```
+
+---
 
 ## 日常使用
 
-### 查看服务状态
+### 查看 OpenClaw 进程
 
 ```bash
-docker compose ps
+ps aux | grep openclaw
 ```
 
 ### 查看实时日志
 
 ```bash
-docker compose logs -f
+tail -f openclaw_workspace/openclaw.log
 ```
-
-按 `Ctrl + C` 退出日志。
 
 ### 停止服务
 
 ```bash
-docker compose down
+pkill -f "openclaw gateway"
 ```
 
 ### 重启服务
 
 ```bash
-docker compose restart
+pkill -f "openclaw gateway"
+cd openclaw_workspace
+openclaw gateway --port 8080 --verbose &
 ```
 
-### 重新构建（修改代码后）
-
-```bash
-docker compose up -d --build
-```
-
-### 进入容器终端
-
-```bash
-docker exec -it openclaw bash
-```
-
-### 在容器内测试环境
+### 检查环境版本
 
 ```bash
 python3 --version
 go version
+node --version
+npm --version
+openclaw --version
 ```
+
+---
 
 ## 与 OpenClaw 对话
 
-### 方式一：进入容器交互式对话
+### 通过 API 调用
 
-```bash
-docker exec -it openclaw bash
-cd /workspace
-python3 your_script.py
-```
-
-### 方式二：通过 API 调用
-
-容器已暴露 8080 端口：
+服务启动后，访问 http://localhost:8080 或 http://虚拟机IP:8080：
 
 ```bash
 curl -X POST http://localhost:8080/api/chat \
@@ -157,73 +269,77 @@ curl -X POST http://localhost:8080/api/chat \
   -d '{"message": "你好，请介绍一下你自己"}'
 ```
 
+### 运行 Python 脚本
+
+```bash
+cd openclaw_workspace
+python3 your_script.py
+```
+
+---
+
 ## 故障排查
 
-### Docker 未安装成功
+### Ubuntu 版本太旧导致安装失败
 
-脚本会自动安装。如需手动安装：
-
-```bash
-curl -fsSL https://get.docker.com | sh
-```
-
-### Docker 镜像拉取失败
-
-脚本会自动配置国内镜像加速器（`https://docker.1ms.run`）。如需手动配置：
+如果使用 Ubuntu 18.04，Node.js 20+ 需要更高版本的 glibc。请先升级系统：
 
 ```bash
-sudo mkdir -p /etc/docker
-sudo tee /etc/docker/daemon.json > /dev/null <<'EOF'
-{
-  "registry-mirrors": [
-    "https://docker.1ms.run",
-    "https://docker.xuanyuan.me"
-  ]
-}
-EOF
-sudo systemctl daemon-reload
-sudo systemctl restart docker
+sudo apt update && sudo apt upgrade -y
+sudo do-release-upgrade
 ```
 
-### 端口冲突
-
-若 8080 端口已被占用，修改 `docker-compose.yml` 中的端口映射：
-
-```yaml
-ports:
-  - "8888:8080"
-```
-
-然后重启服务：
+或手动更换镜像源后升级：
 
 ```bash
-docker compose down
-docker compose up -d
+sudo bash -c 'cat > /etc/apt/sources.list << EOF
+deb http://mirrors.aliyun.com/ubuntu/ bionic main restricted universe multiverse
+deb http://mirrors.aliyun.com/ubuntu/ bionic-updates main restricted universe multiverse
+deb http://mirrors.aliyun.com/ubuntu/ bionic-security main restricted universe multiverse
+deb http://mirrors.aliyun.com/ubuntu/ bionic-backports main restricted universe multiverse
+EOF'
+sudo apt update && sudo apt upgrade -y
+sudo do-release-upgrade
 ```
 
-### 容器不断重启
+### 下载速度慢
 
-查看日志定位问题：
+脚本已默认配置阿里云镜像源。如需更换其他镜像源，修改 `/etc/apt/sources.list`。
+
+### 端口 8080 被占用
+
+修改启动命令使用其他端口：
 
 ```bash
-docker compose logs -f
+openclaw gateway --port 8888 --verbose
 ```
 
-### 查看容器内部状态
+### Go/Python/Node 环境异常
+
+检查环境变量是否正确加载：
 
 ```bash
-docker exec -it openclaw ps aux
-docker exec -it openclaw env
+echo $PATH
+which go
+which node
+which python3
+```
+
+如需手动刷新环境：
+
+```bash
+source /etc/profile
 ```
 
 ### 重置所有数据
 
 ```bash
-docker compose down -v
 rm -rf openclaw_workspace
 rm -f .env
 ./install.sh
 ```
+
+---
 
 ## 环境变量说明
 
@@ -231,20 +347,23 @@ rm -f .env
 |--------|------|--------|
 | `CURRENT_PROVIDER` | 当前使用的 AI 提供商 | `deepseek` / `silicon_flow` / `zhipu` |
 | `LOG_LEVEL` | 日志级别 | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
-| `WORKSPACE_PATH` | 工作空间路径（容器内） | `/workspace` |
+| `WORKSPACE_PATH` | 工作空间路径 | `/workspace` |
+
+---
 
 ## 数据持久化
 
-所有工作数据保存在宿主机的 `./openclaw_workspace` 目录中，删除容器不会丢失数据。
-
-如需备份：
+所有工作数据保存在 `./openclaw_workspace` 目录中，重装系统前请备份：
 
 ```bash
 tar -czvf openclaw_backup.tar.gz openclaw_workspace/
 ```
+
+---
 
 ## 安全提醒
 
 - **`.env` 文件包含真实 API Key，切勿提交到 GitHub**
 - 本项目已配置 `.gitignore` 忽略 `.env` 文件
 - 定期更换 API Key，避免密钥泄露
+- 建议使用防火墙限制 API 访问来源

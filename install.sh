@@ -17,75 +17,65 @@ check_sudo() {
     fi
 }
 
-configure_docker_mirror() {
-    local mirror_config='{
-  "registry-mirrors": [
-    "https://docker.1ms.run",
-    "https://docker.xuanyuan.me"
-  ]
-}'
-    if [ -f /etc/docker/daemon.json ]; then
-        if grep -q "registry-mirrors" /etc/docker/daemon.json 2>/dev/null; then
-            log_info "Docker 镜像加速已配置，跳过"
-            return 0
-        fi
-        log_warn "检测到现有 daemon.json，备份并更新..."
-        sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.bak
-    fi
-    log_warn "配置国内 Docker 镜像加速器..."
-    sudo mkdir -p /etc/docker
-    echo "$mirror_config" | sudo tee /etc/docker/daemon.json > /dev/null
-    sudo systemctl daemon-reload
-    sudo systemctl restart docker
-    log_info "镜像加速配置完成"
+configure_apt_mirror() {
+    log_info "配置阿里云镜像源..."
+    sudo cp /etc/apt/sources.list /etc/apt/sources.list.backup
+    sudo bash -c 'cat > /etc/apt/sources.list << EOF
+deb http://mirrors.aliyun.com/ubuntu/ bionic main restricted universe multiverse
+deb http://mirrors.aliyun.com/ubuntu/ bionic-updates main restricted universe multiverse
+deb http://mirrors.aliyun.com/ubuntu/ bionic-security main restricted universe multiverse
+deb http://mirrors.aliyun.com/ubuntu/ bionic-backports main restricted universe multiverse
+EOF'
+    log_info "镜像源配置完成"
 }
 
-check_docker() {
-    if ! command -v docker &> /dev/null; then
-        log_warn "Docker 未安装，正在自动安装..."
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq ca-certificates curl gnupg lsb-release > /dev/null 2>&1
-        sudo mkdir -p /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin > /dev/null 2>&1 || log_error "Docker 安装失败"
-        sudo systemctl start docker || sudo service docker start
-        sudo systemctl enable docker || true
-        sudo usermod -aG docker $USER
-        configure_docker_mirror
-        log_info "Docker 安装完成"
-    else
-        log_info "Docker 已安装: $(docker --version)"
-        configure_docker_mirror
-    fi
+update_system() {
+    log_info "更新软件包列表..."
+    sudo apt-get update -qq
+    log_info "安装系统基础依赖..."
+    sudo apt-get install -y -qq curl wget git build-essential procps python3 python3-pip unzip
 }
 
-check_docker_compose() {
-    if ! docker compose version &> /dev/null && ! command -v docker-compose &> /dev/null; then
-        log_warn "Docker Compose 未安装，正在自动安装..."
-        sudo apt-get install -y -qq docker-compose > /dev/null 2>&1 || log_warn "Docker Compose 安装失败"
-        log_info "Docker Compose 安装完成"
+check_go() {
+    if ! command -v go &> /dev/null; then
+        log_warn "Go 未安装，正在安装 Go 1.21..."
+        local go_version="go1.21.6.linux-amd64"
+        local go_tarball="${go_version}.tar.gz"
+        cd /tmp
+        curl -fsSL "https://golang.google.cn/dl/${go_tarball}" -o "${go_tarball}"
+        sudo tar -C /usr/local -xzf "${go_tarball}"
+        sudo ln -sf /usr/local/go/bin/go /usr/local/bin/go
+        sudo ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+        rm -f "${go_tarball}"
+        echo 'export PATH=$PATH:/usr/local/go/bin' | sudo tee -a /etc/profile > /dev/null
+        export PATH="$PATH:/usr/local/go/bin"
+        log_info "Go 安装完成: $(go version)"
     else
-        log_info "Docker Compose 已就绪"
+        log_info "Go 已安装: $(go version)"
     fi
 }
 
 check_node() {
     if ! command -v node &> /dev/null; then
-        log_warn "Node.js 未安装，正在安装 Node.js 22..."
-        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-        sudo apt-get install -y -qq nodejs > /dev/null 2>&1 || log_error "Node.js 安装失败"
+        log_warn "Node.js 未安装，正在安装 Node.js 20..."
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt-get install -y -qq nodejs
         log_info "Node.js 安装完成: $(node --version)"
     else
         log_info "Node.js 已安装: $(node --version)"
     fi
 
     if ! command -v npm &> /dev/null; then
-        log_warn "npm 未找到，尝试安装..."
-        sudo apt-get install -y -qq npm > /dev/null 2>&1
+        log_warn "npm 未找到，正在安装..."
+        sudo apt-get install -y -qq npm
     fi
     log_info "npm 已就绪: $(npm --version)"
+}
+
+install_python_deps() {
+    log_info "安装 Python 依赖..."
+    pip3 install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple openai python-dotenv requests
+    log_info "Python 依赖安装完成"
 }
 
 create_workspace() {
@@ -158,12 +148,6 @@ install_openclaw_cli() {
     fi
 }
 
-install_docker_container() {
-    log_info "正在构建 OpenClaw Docker 容器..."
-    docker compose up -d --build
-    log_info "Docker 容器已启动"
-}
-
 start_services() {
     install_openclaw_cli
 
@@ -173,12 +157,8 @@ start_services() {
     log_warn "=========================================="
     echo ""
     log_info "启动 OpenClaw 网关（前台运行）:"
-    log_info "  cd ~/openclaw-deploy/openclaw_workspace"
+    log_info "  cd openclaw_workspace"
     log_info "  openclaw gateway --port 8080 --verbose"
-    echo ""
-    log_info "或者使用 Docker 方式运行:"
-    log_info "  cd ~/openclaw-deploy"
-    log_info "  docker compose up -d"
     echo ""
     log_info "详细文档请查看 README.md"
     log_info "=========================================="
@@ -189,9 +169,11 @@ main() {
     log_info "========== OpenClaw 一键部署脚本 =========="
     echo ""
     check_sudo
-    check_docker
-    check_docker_compose
+    configure_apt_mirror
+    update_system
+    check_go
     check_node
+    install_python_deps
     create_workspace
     check_and_clone_openclaw_source
     check_env_file
