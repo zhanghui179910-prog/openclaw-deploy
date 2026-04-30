@@ -13,8 +13,9 @@ openclaw-deploy/
 ├── start.bat            # Windows 快捷启动 (双击运行)
 ├── start.sh             # Linux 快捷启动脚本
 ├── .env.template        # 环境变量模板
-├── .env                 # 实际配置文件（自动生成）
-└── openclaw_workspace/  # 工作目录（自动创建）
+├── .env                 # 实际配置文件（自动生成，不提交 Git）
+├── .gitignore           # Git 忽略配置
+└── openclaw_workspace/  # 工作目录（首次运行时自动创建）
 ```
 
 ---
