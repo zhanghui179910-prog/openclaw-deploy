@@ -8,19 +8,90 @@
 
 ```
 openclaw-deploy/
-├── install.ps1          # Windows 一键部署脚本 (PowerShell)
-├── install.sh           # Linux 一键部署脚本 (Bash)
-├── start.bat            # Windows 快捷启动 (双击运行)
-├── start.sh             # Linux 快捷启动脚本
-├── .env.template        # 环境变量模板
-├── .env                 # 实际配置文件（自动生成，不提交 Git）
-├── .gitignore           # Git 忽略配置
-└── openclaw_workspace/  # 工作目录（首次运行时自动创建）
+├── prepare-offline.ps1     # 离线包准备脚本（有网机器运行）
+├── install-offline.ps1     # 离线一键安装脚本（断网机器运行）
+├── install.ps1             # Windows 在线一键部署脚本
+├── install.sh              # Linux 在线一键部署脚本
+├── start.bat               # Windows 快捷启动（双击运行）
+├── start.sh                # Linux 快捷启动脚本
+├── .env.template           # 环境变量模板
+├── .env                    # 实际配置文件（首次运行时生成）
+├── .gitignore              # Git 忽略配置
+└── openclaw_workspace/     # 工作目录（首次运行时自动创建）
 ```
 
 ---
 
-# 一、Windows 系统部署指南
+# 一、离线部署指南（断网 Windows 11）
+
+> **适用场景：** 目标机器完全断网，无法下载任何依赖
+
+## 部署原理
+
+```
+有网 Windows                    断网 Windows 11
+─────────────                  ─────────────────
+prepare-offline.ps1            ↓
+  → 下载所有依赖            拷贝 zip
+  → 打包成 zip    ─────────→  install-offline.ps1
+                                  → 本地安装
+                                  → 部署完成！
+```
+
+## 操作步骤
+
+### 第一步：在有网机器上准备离线包
+
+在另一台 **能上网的 Windows** 上，右键 PowerShell → 以管理员身份运行：
+
+```powershell
+cd openclaw-deploy
+.\prepare-offline.ps1
+```
+
+脚本会自动：
+- 下载 Node.js 20、Python 3.11、Go 1.21、Git 安装包
+- 克隆 OpenClaw 源码并预装 npm 依赖
+- 打包生成 `openclaw-offline.zip`（约 500MB）
+
+### 第二步：拷贝到断网机器
+
+通过 U 盘或移动硬盘将 `openclaw-offline.zip` 拷贝到断网 Windows 11。
+
+### 第三步：断网机器上一键安装
+
+右键 PowerShell → **以管理员身份运行**：
+
+```powershell
+# 解压
+Expand-Archive -Path "openclaw-offline.zip" -DestinationPath "."
+cd openclaw-offline
+
+# 解除脚本限制
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
+
+# 一键安装
+.\install-offline.ps1
+```
+
+脚本会自动：
+- 从本地安装包静默安装 Node.js、Python、Go、Git
+- 部署预构建的 OpenClaw 工作空间
+- 生成 .env 配置文件
+- 创建快捷启动脚本
+
+### 第四步：配置 API Key 并启动
+
+```powershell
+notepad .env
+# 填入 API Key 后保存
+
+# 双击 start.bat 启动！
+```
+
+---
+
+# 二、Windows 在线部署指南
 
 ## 系统要求
 
@@ -177,7 +248,7 @@ openclaw gateway --port 8888 --verbose
 
 ---
 
-# 二、Ubuntu Linux 系统部署指南
+# 三、Ubuntu Linux 系统部署指南
 
 ## 系统要求
 
@@ -332,7 +403,7 @@ sudo systemctl status openclaw
 
 ---
 
-# 三、环境变量说明
+# 四、环境变量说明
 
 | 变量名 | 说明 | 可选值 |
 |--------|------|--------|
@@ -344,7 +415,7 @@ sudo systemctl status openclaw
 
 ---
 
-# 四、数据持久化
+# 五、数据持久化
 
 所有工作数据保存在 `openclaw_workspace` 目录中。
 
@@ -360,7 +431,7 @@ tar -czvf openclaw_backup.tar.gz openclaw_workspace/
 
 ---
 
-# 五、故障排查
+# 六、故障排查
 
 ## 通用问题
 
@@ -410,7 +481,7 @@ refreshenv
 
 ---
 
-# 六、安全提醒
+# 七、安全提醒
 
 - **`.env` 文件包含真实 API Key，切勿提交到 GitHub**
 - 本项目已配置 `.gitignore` 忽略 `.env` 文件
@@ -419,8 +490,9 @@ refreshenv
 
 ---
 
-# 七、更新日志
+# 八、更新日志
 
+- **v2.1** - 新增离线部署支持：断网 Windows 11 傻瓜式一键安装
 - **v2.0** - 跨平台支持，新增 Windows 一键部署
 - **v1.5** - 优化安装脚本幂等性和错误处理
 - **v1.0** - 初始版本，支持 Ubuntu 本地部署
